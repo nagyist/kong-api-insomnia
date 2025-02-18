@@ -1,14 +1,14 @@
-import { Settings } from 'insomnia/src//models/settings';
-import { ClientCertificate, init as initClientCertificate } from 'insomnia/src/models/client-certificate';
-import { Request as InsomniaRequest, RequestBody as InsomniaRequestBody, RequestBodyParameter, RequestPathParameter } from 'insomnia/src/models/request';
+import { type ClientCertificate, init as initClientCertificate } from 'insomnia/src/models/client-certificate';
+import type { Request as InsomniaRequest, RequestBody as InsomniaRequestBody, RequestBodyParameter, RequestPathParameter } from 'insomnia/src/models/request';
+import type { Settings } from 'insomnia/src/models/settings';
 
-import { AuthOptions, AuthOptionTypes, fromPreRequestAuth, RequestAuth } from './auth';
-import { CertificateOptions } from './certificates';
+import { type AuthOptions, type AuthOptionTypes, fromPreRequestAuth, RequestAuth } from './auth';
+import type { CertificateOptions } from './certificates';
 import { Certificate } from './certificates';
-import { HeaderDefinition } from './headers';
+import type { HeaderDefinition } from './headers';
 import { Header, HeaderList } from './headers';
 import { Property, PropertyBase, PropertyList } from './properties';
-import { ProxyConfig, ProxyConfigOptions } from './proxy-configs';
+import { ProxyConfig, type ProxyConfigOptions } from './proxy-configs';
 import { QueryParam, toUrlObject, Url } from './urls';
 import { Variable, VariableList } from './variables';
 
@@ -17,10 +17,10 @@ export type RequestBodyMode = undefined | 'formdata' | 'urlencoded' | 'raw' | 'f
 export interface RequestBodyOptions {
     mode: RequestBodyMode;
     file?: string;
-    formdata?: { key: string; value: string; type?: string }[];
-    graphql?: { query: string; operationName: string; variables: object };
+    formdata?: { key: string; value: string; type?: string; disabled?: boolean }[];
+    graphql?: { query: string; operationName: string; variables: object; disabled?: boolean };
     raw?: string;
-    urlencoded?: { key: string; value: string; type?: string }[];
+    urlencoded?: { key: string; value: string; type?: string; disabled?: boolean; multiline?: boolean | string; fileName?: string }[];
     options?: object;
 }
 
@@ -29,11 +29,12 @@ export class FormParam extends Property {
     value: string;
     type?: string;
 
-    constructor(options: { key: string; value: string; type?: string }) {
+    constructor(options: { key: string; value: string; type?: string; disabled?: boolean }) {
         super();
         this.key = options.key;
         this.value = options.value;
         this.type = options.type;
+        this.disabled = options.disabled;
     }
 
     static _postman_propertyAllowsMultipleValues() {
@@ -48,17 +49,17 @@ export class FormParam extends Property {
     // static parse(param: FormParam) {
     // }
 
-    toJSON() {
-        return { key: this.key, value: this.value, type: this.type };
+    override toJSON() {
+        return { key: this.key, value: this.value, type: this.type, disabled: this.disabled };
     }
 
-    toString() {
+    override toString() {
         const key = encodeURIComponent(this.key);
         const value = encodeURIComponent(this.value);
         return `${key}=${value}`;
     }
 
-    valueOf() {
+    override valueOf() {
         return this.value;
     }
 }
@@ -91,7 +92,14 @@ function getClassFields(opts: RequestBodyOptions) {
                 QueryParam,
                 undefined,
                 opts.urlencoded
-                    .map(entry => ({ key: entry.key, value: entry.value, type: entry.type }))
+                    .map(entry => ({
+                        key: entry.key,
+                        value: entry.value,
+                        type: entry.type,
+                        disabled: entry.disabled,
+                        fileName: entry.fileName,
+                        multiline: entry.multiline,
+                    }))
                     .map(kv => new QueryParam(kv)),
             );
         }
@@ -150,7 +158,11 @@ export class RequestBody extends PropertyBase {
         }
     }
 
-    toString() {
+    override toString() {
+        if (this.mode === undefined) {
+            return '';
+        }
+
         try {
             switch (this.mode) {
                 case 'formdata':
@@ -244,7 +256,7 @@ function requestOptionsToClassFields(options: RequestOptions) {
 }
 
 export class Request extends Property {
-    name: string;
+    override name: string;
     url: Url;
     method: string;
     headers: HeaderList<Header>;
@@ -375,11 +387,11 @@ export class Request extends Property {
         this.url.removeQueryParams(params);
     }
 
-    // TODO:
-    // size(): RequestSize {
-    // }
+    size(): RequestSize {
+        return calculatePayloadSize((this.body || '').toString(), this.headers);
+    }
 
-    toJSON() {
+    override toJSON() {
         return {
             url: this.url,
             method: this.method,
@@ -402,6 +414,7 @@ export class Request extends Property {
                 authenticate: this.proxy.authenticate,
                 username: this.proxy.username,
                 password: this.proxy.password,
+                protocol: this.proxy.protocol,
             } : undefined,
             certificate: this.certificate ? {
                 name: this.certificate?.name,
@@ -492,10 +505,14 @@ export function mergeClientCertificates(
     }
 
     const baseCertificate = originalClientCertificates && originalClientCertificates.length > 0 ?
-        originalClientCertificates[0] :
         {
+            // TODO: remove baseModelPart currently it is necessary for type checking
             ...initClientCertificate(),
-            // TODO: remove baseModelPart when it is not necessary for certs
+            ...originalClientCertificates[0],
+        } :
+        {
+            // TODO: remove baseModelPart currently it is necessary for type checking
+            ...initClientCertificate(),
             _id: '',
             type: '',
             parentId: '',
@@ -505,27 +522,45 @@ export function mergeClientCertificates(
             name: '',
         };
 
-    if (updatedReq.certificate.pfx != null && updatedReq.certificate.pfx?.src !== '') {
-        return [{
+    if (updatedReq.certificate.pfx && updatedReq.certificate.pfx?.src !== '') {
+        const specifiedCert: ClientCertificate = {
             ...baseCertificate,
             key: null,
             cert: null,
+            name: updatedReq.certificate.name || '',
+            disabled: updatedReq.certificate.disabled || false,
             passphrase: updatedReq.certificate.passphrase || null,
             pfx: updatedReq.certificate.pfx?.src,
-        }];
+            host: '*',
+        };
+
+        return [specifiedCert, ...originalClientCertificates];
     } else if (
-        updatedReq.certificate.key != null &&
-        updatedReq.certificate.cert != null &&
+        updatedReq &&
+        updatedReq.certificate.key &&
+        updatedReq.certificate.cert &&
         updatedReq.certificate.key?.src !== '' &&
         updatedReq.certificate.cert?.src !== ''
     ) {
-        return [{
+        const specifiedCert: ClientCertificate = {
             ...baseCertificate,
+
+            _id: '',
+            type: '',
+            parentId: '',
+            modified: 0,
+            created: 0,
+            isPrivate: false,
+            name: updatedReq.certificate.name || '',
+            disabled: updatedReq.certificate.disabled || false,
+            host: '*',
             key: updatedReq.certificate.key?.src,
             cert: updatedReq.certificate.cert?.src,
             passphrase: updatedReq.certificate.passphrase || null,
             pfx: null,
-        }];
+        };
+
+        return [specifiedCert, ...originalClientCertificates];
     }
 
     throw Error('Invalid certificate configuration: "cert+key" and "pfx" can not be set at the same time');
@@ -548,7 +583,14 @@ export function toScriptRequestBody(insomniaReqBody: InsomniaRequestBody): Reque
         reqBodyOpt = {
             mode: 'urlencoded',
             urlencoded: insomniaReqBody.params.map(
-                (param: RequestBodyParameter) => ({ key: param.name, value: param.value, type: param.type })
+                (param: RequestBodyParameter) => ({
+                    key: param.name,
+                    value: param.value,
+                    type: param.type,
+                    multiline: param.multiline,
+                    disabled: param.disabled,
+                    fileName: param.fileName,
+                })
             ),
         };
     }
@@ -592,22 +634,29 @@ export function mergeRequestBody(
     }
 
     try {
-        const textContent = updatedReqBody?.raw ? updatedReqBody?.raw :
-            updatedReqBody?.graphql ? JSON.stringify(updatedReqBody?.graphql) : '';
+        const textContent = updatedReqBody?.raw !== undefined ? updatedReqBody?.raw :
+            updatedReqBody?.graphql ? JSON.stringify(updatedReqBody?.graphql) : undefined;
 
         return {
             mimeType: mimeType,
             text: textContent,
             fileName: updatedReqBody?.file,
             params: updatedReqBody?.urlencoded?.map(
-                (param: { key: string; value: string; type?: string }) => (
-                    { name: param.key, value: param.value, type: param.type }
-                ),
+                (param: QueryParam) => {
+                    return {
+                        name: param.key,
+                        value: param.value,
+                        type: param.type,
+                        fileName: param.fileName,
+                        multiline: param.multiline,
+                        disabled: param.disabled,
+                    };
+                },
                 {},
             ),
         };
     } catch (e) {
-        throw Error(`failed to update body: ${e}`)
+        throw Error(`failed to update body: ${e}`);
     }
 }
 
@@ -620,11 +669,13 @@ export function mergeRequests(
         url: updatedReq.url.toString(),
         method: updatedReq.method,
         body: mergeRequestBody(updatedReq.body, originalReq.body),
-        headers: updatedReq.headers.map(
-            (header: Header) => ({
-                name: header.key,
-                value: header.value,
-            }),
+        headers: updatedReq.headers
+            .map(
+                (header: Header) => ({
+                    name: header.key,
+                    value: header.value,
+                    disabled: header.disabled,
+                }),
             {},
         ),
         authentication: fromPreRequestAuth(updatedReq.auth),
@@ -637,4 +688,27 @@ export function mergeRequests(
         ...originalReq,
         ...updatedReqProperties,
     };
+}
+
+export function calculatePayloadSize(body: string, headers: HeaderList<Header>): RequestSize {
+    const bodySize = new Blob([body]).size;
+    const headerSize = calculateHeadersSize(headers);
+    return {
+        body: bodySize,
+        header: headerSize,
+        total: bodySize + headerSize,
+        source: 'COMPUTED',
+    };
+}
+
+export function calculateHeadersSize(headers: HeaderList<Header>): number {
+    const headerSize = new Blob([
+        headers.reduce(
+            (acc, header) => (acc + header.toString() + '\n'),
+            '',
+            {},
+        ),
+    ]).size;
+
+    return headerSize;
 }

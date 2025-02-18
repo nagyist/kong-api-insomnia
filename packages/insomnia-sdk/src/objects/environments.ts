@@ -1,7 +1,9 @@
-import { getIntepolator } from './interpolator';
+import { getExistingConsole } from './console';
+import { getInterpolator } from './interpolator';
+
 export class Environment {
     private _name: string;
-    private kvs = new Map<string, boolean | number | string>();
+    private kvs = new Map<string, boolean | number | string | undefined>();
 
     constructor(name: string, jsonObject: object | undefined) {
         this._name = name;
@@ -20,7 +22,11 @@ export class Environment {
         return this.kvs.get(variableName);
     };
 
-    set = (variableName: string, variableValue: boolean | number | string) => {
+    set = (variableName: string, variableValue: boolean | number | string | undefined | null) => {
+        if (variableValue === null) {
+            getExistingConsole().warn(`Variable "${variableName}" has a null value`);
+            return;
+        }
         this.kvs.set(variableName, variableValue);
     };
 
@@ -33,7 +39,7 @@ export class Environment {
     };
 
     replaceIn = (template: string) => {
-        return getIntepolator().render(template, this.toObject());
+        return getInterpolator().render(template, this.toObject());
     };
 
     toObject = () => {
@@ -43,45 +49,46 @@ export class Environment {
 
 export class Variables {
     // TODO: support vars for all levels
-    private globals: Environment;
-    private collection: Environment;
-    private environment: Environment;
-    private data: Environment;
-    private local: Environment;
+    private globalVars: Environment;
+    private collectionVars: Environment;
+    private environmentVars: Environment;
+    private iterationDataVars: Environment;
+    private localVars: Environment;
 
     constructor(
         args: {
-            globals: Environment;
-            collection: Environment;
-            environment: Environment;
-            data: Environment;
+            globalVars: Environment;
+            collectionVars: Environment;
+            environmentVars: Environment;
+            iterationDataVars: Environment;
+            localVars: Environment;
         },
     ) {
-        this.globals = args.globals;
-        this.collection = args.collection;
-        this.environment = args.environment;
-        this.data = args.data;
-        this.local = new Environment('__local', {});
+        this.globalVars = args.globalVars;
+        this.collectionVars = args.collectionVars;
+        this.environmentVars = args.environmentVars;
+        this.iterationDataVars = args.iterationDataVars;
+        this.localVars = args.localVars;
     }
 
     has = (variableName: string) => {
-        const globalsHas = this.globals.has(variableName);
-        const collectionHas = this.collection.has(variableName);
-        const environmentHas = this.environment.has(variableName);
-        const dataHas = this.data.has(variableName);
-        const localHas = this.local.has(variableName);
+        const globalVarsHas = this.globalVars.has(variableName);
+        const collectionVarsHas = this.collectionVars.has(variableName);
+        const environmentVarsHas = this.environmentVars.has(variableName);
+        const iterationDataVarsHas = this.iterationDataVars.has(variableName);
+        const localVarsHas = this.localVars.has(variableName);
 
-        return globalsHas || collectionHas || environmentHas || dataHas || localHas;
+        return globalVarsHas || collectionVarsHas || environmentVarsHas || iterationDataVarsHas || localVarsHas;
     };
 
     get = (variableName: string) => {
         let finalVal: boolean | number | string | object | undefined = undefined;
         [
-            this.local,
-            this.data,
-            this.environment,
-            this.collection,
-            this.globals,
+            this.localVars,
+            this.iterationDataVars,
+            this.environmentVars,
+            this.collectionVars,
+            this.globalVars,
         ].forEach(vars => {
             const value = vars.get(variableName);
             if (!finalVal && value) {
@@ -92,22 +99,27 @@ export class Variables {
         return finalVal;
     };
 
-    set = (variableName: string, variableValue: boolean | number | string) => {
-        this.local.set(variableName, variableValue);
+    set = (variableName: string, variableValue: boolean | number | string | undefined | null) => {
+        if (variableValue === null) {
+            getExistingConsole().warn(`Variable "${variableName}" has a null value`);
+            return;
+        }
+
+        this.localVars.set(variableName, variableValue);
     };
 
     replaceIn = (template: string) => {
         const context = this.toObject();
-        return getIntepolator().render(template, context);
+        return getInterpolator().render(template, context);
     };
 
     toObject = () => {
         return [
-            this.globals,
-            this.collection,
-            this.environment,
-            this.data,
-            this.local,
+            this.globalVars,
+            this.collectionVars,
+            this.environmentVars,
+            this.iterationDataVars,
+            this.localVars,
         ].map(
             vars => vars.toObject()
         ).reduce(
@@ -115,4 +127,43 @@ export class Variables {
             {},
         );
     };
+
+    localVarsToObject = () => {
+        return this.localVars.toObject();
+    };
+}
+
+export class Vault extends Environment {
+
+    constructor(name: string, jsonObject: object | undefined, enableVaultInScripts: boolean) {
+        super(name, jsonObject);
+        return new Proxy(this, {
+            // throw error on get or set method call if enableVaultInScripts is false
+            get: (target, prop, receiver) => {
+                if (!enableVaultInScripts) {
+                    throw new Error('Vault is disabled in script');
+                }
+                return Reflect.get(target, prop, receiver);
+            },
+            set: (target, prop, value, receiver) => {
+                if (!enableVaultInScripts) {
+                    throw new Error('Vault is disabled in script');
+                }
+                return Reflect.set(target, prop, value, receiver);
+            },
+        });
+    }
+
+    unset = () => {
+        throw new Error('Vault can not be unset in script');
+    };
+
+    clear = () => {
+        throw new Error('Vault can not be cleared in script');
+    };
+
+    set = () => {
+        throw new Error('Vault can not be set in script');
+    };
+
 }

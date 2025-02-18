@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it } from '@jest/globals';
 import path from 'path';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import { globalBeforeEach } from '../../__jest__/before-each';
+import { database as db } from '../../common/database';
 import * as models from '../../models';
 import { Cookie } from '../../models/cookie-jar';
 import { Request } from '../../models/request';
@@ -12,7 +12,7 @@ import { getRenderedRequestAndContext } from '../render';
 
 describe('export', () => {
   beforeEach(async () => {
-    await globalBeforeEach();
+    await db.init(models.types(), { inMemoryOnly: true }, true, () => { },);
     await models.project.all();
     await models.settings.getOrCreate();
   });
@@ -35,11 +35,11 @@ describe('export', () => {
         },
         headers: [
           {
-            name: 'Content-Type',
+            name: 'Accept',
             value: 'application/json',
           },
           {
-            name: 'Accept',
+            name: 'Content-Type',
             value: 'application/json',
             disabled: false,
           },
@@ -89,11 +89,11 @@ describe('export', () => {
                 cookies: [],
                 headers: [
                   {
-                    name: 'Content-Type',
+                    name: 'Accept',
                     value: 'application/json',
                   },
                   {
-                    name: 'Accept',
+                    name: 'Content-Type',
                     value: 'application/json',
                   },
                 ],
@@ -335,12 +335,12 @@ describe('export', () => {
         statusMessage: 'OK',
         headers: [
           {
-            name: 'Content-Type',
-            value: 'application/json',
-          },
-          {
             name: 'Content-Length',
             value: '2',
+          },
+          {
+            name: 'Content-Type',
+            value: 'application/json',
           },
           {
             name: 'Set-Cookie',
@@ -365,12 +365,13 @@ describe('export', () => {
         ],
         headers: [
           {
-            name: 'Content-Type',
-            value: 'application/json',
-          },
-          {
             name: 'Content-Length',
             value: '2',
+          },
+
+          {
+            name: 'Content-Type',
+            value: 'application/json',
           },
           {
             name: 'Set-Cookie',

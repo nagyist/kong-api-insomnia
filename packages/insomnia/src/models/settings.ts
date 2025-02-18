@@ -5,7 +5,7 @@ import {
 } from '../common/constants';
 import { database as db } from '../common/database';
 import * as hotkeys from '../common/hotkeys';
-import { HttpVersions, KeyboardShortcut, Settings as BaseSettings, UpdateChannel } from '../common/settings';
+import { HttpVersions, type KeyboardShortcut, type Settings as BaseSettings, UpdateChannel } from '../common/settings';
 import type { BaseModel } from './index';
 
 export type Settings = BaseModel & BaseSettings;
@@ -31,11 +31,13 @@ export function init(): BaseSettings {
     deviceId: null,
     disableHtmlPreviewJs: false,
     disableResponsePreviewLinks: false,
+    disableAppVersionUserAgent: false,
     disableUpdateNotification: false,
     editorFontSize: 11,
     editorIndentSize: 2,
     editorIndentWithTabs: true,
     editorKeyMap: 'default',
+    enableKeyMapForInlineTextEditors: false,
     editorLineWrapping: true,
     enableAnalytics: true,
     showVariableSourceAndValue: false,
@@ -53,6 +55,7 @@ export function init(): BaseSettings {
     maxHistoryResponses: 20,
     maxRedirects: 10,
     maxTimelineDataSizeKB: 10,
+    pluginNodeExtraCerts: '',
     noProxy: '',
     nunjucksPowerUserMode: false,
     pluginConfig: {},
@@ -69,6 +72,9 @@ export function init(): BaseSettings {
     useBulkParametersEditor: false,
     validateAuthSSL: true,
     validateSSL: true,
+    saveVaultKeyLocally: true,
+    enableVaultInScripts: false,
+    saveVaultKeyToOSSecretManager: true,
   };
 }
 

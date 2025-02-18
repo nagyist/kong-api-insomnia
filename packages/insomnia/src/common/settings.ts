@@ -1,4 +1,4 @@
-import { ValueOf } from 'type-fest';
+import type { ValueOf } from 'type-fest';
 
 /**
  * The readable definition of a hotkey.
@@ -102,8 +102,12 @@ export interface Settings {
 
   disableResponsePreviewLinks: boolean;
 
+  disableAppVersionUserAgent: boolean;
+
   /** If true, Insomnia won’t show a notification when new updates are available. Users can still check for updates in Preferences. */
   disableUpdateNotification: boolean;
+
+  enableKeyMapForInlineTextEditors: boolean;
   editorFontSize: number;
   editorIndentSize: number;
   editorIndentWithTabs: boolean;
@@ -131,6 +135,7 @@ export interface Settings {
   noProxy: string;
   nunjucksPowerUserMode: boolean;
   pluginConfig: PluginConfigMap;
+  pluginNodeExtraCerts: string;
   pluginPath: string;
   preferredHttpVersion: HttpVersion;
   proxyEnabled: boolean;
@@ -143,4 +148,8 @@ export interface Settings {
   useBulkParametersEditor: boolean;
   validateAuthSSL: boolean;
   validateSSL: boolean;
+  // vault related settings
+  saveVaultKeyLocally: boolean;
+  enableVaultInScripts: boolean;
+  saveVaultKeyToOSSecretManager: boolean;
 }

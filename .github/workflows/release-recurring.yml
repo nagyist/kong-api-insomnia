@@ -17,7 +17,7 @@ env:
   PR_NUMBER: ${{ github.event.number }}
 jobs:
   build-and-upload-artifacts:
-    timeout-minutes: 25
+    timeout-minutes: 15
     # Skip jobs for release PRs
     # windows on recurring should be portable
     if: ${{ !startsWith(github.head_ref, 'release/') }}
@@ -26,12 +26,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: "macos-latest"
-            build-targets: "zip"
-          - os: "windows-latest"
-            build-targets: "portable"
-          - os: "ubuntu-latest"
-            build-targets: "tar.gz"
+          - os: macos-latest-large
+            build-targets: zip
+          - os: windows-latest
+            build-targets: portable
+          - os: ubuntu-22.04
+            build-targets: tar.gz
+          - os: ubuntu-22.04-arm
+            build-targets: tar.gz
     steps:
       - name: Checkout branch
         uses: actions/checkout@v4
@@ -53,6 +55,11 @@ jobs:
       - name: Package
         shell: bash
         run: NODE_OPTIONS='--max_old_space_size=6144' BUILD_TARGETS='${{ matrix.build-targets }}' npm run app-package
+
+      # See https://github.com/electron/electron/issues/42510#issuecomment-2171583086
+      - if: ${{ runner.os == 'Linux' }}
+        name: Lift unprivileged user namespace restrictions
+        run: sudo sysctl kernel/apparmor_restrict_unprivileged_userns=0
 
       - name: Test critical path on packaged electron app
         run: npm run test:package -w packages/insomnia-smoke-test -- --project=Critical
